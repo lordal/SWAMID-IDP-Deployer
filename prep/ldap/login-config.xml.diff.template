@@ -1,0 +1,20 @@
+27a28,46
+> 
+> 	<application-policy name="ShibUserPassAuth">
+> 	<authentication>
+> 		<login-module code="edu.vt.middleware.ldap.jaas.LdapLoginModule"
+> 				flag="required">
+> 			<module-option name="host">LdApUrI</module-option>
+> 			<module-option name="port">636</module-option>
+> 			<module-option name="base">LdApBaSeDn
+> 				</module-option>
+> 			<module-option name="ssl">true</module-option>
+> 			<module-option name="tls">false</module-option>
+> 			<module-option name="userField">uid</module-option>
+> 			<module-option name="auth.subtreeSearch">SuBsEaRcH</module-option>
+> 			<module-option name="authtype">simple</module-option>
+> 		</login-module>
+> 	</authentication>
+> 	</application-policy>
+> 
+> 

@@ -1,0 +1,38 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          Jboss
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start jboss at boot time
+# Description:       Enable jboss application server.
+### END INIT INFO
+
+if [ -f "/etc/default/jboss" ]
+then
+	. /etc/default/jboss
+fi
+
+if [ -z "$JBOSS_HOME" ]
+then
+	JBOSS_HOME=/opt/jboss
+	export JBOSS_HOME
+fi
+
+case $1 in
+	'start')
+		${JBOSS_HOME}/bin/run.sh > /dev/null 2>&1 &
+	;;
+	'stop')
+		${JBOSS_HOME}/bin/shutdown.sh -S
+	;;
+	'restart')
+		$0 stop
+		$0 start
+	;;
+	*)
+		echo "usage: $0 <start|stop|restart>"
+		exit;
+	;;
+esac

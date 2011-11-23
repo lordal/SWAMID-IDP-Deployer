@@ -1,0 +1,14 @@
+type=""		# Authentication type (cas, ldap)
+google=""	# Release attributes to Google [ y | n ]
+googleDom=""	# Your Google domain name: (student.xxx.yy)
+ntpserver=""	# NTP server
+ldapserver=""	# LDAP server
+ldapbasedn=""	# LDAP Base DN
+ldapbinddn=""	# LDAP Bind DN
+ldappass=""	# LDAP Password:
+subsearch=""	# LDAP Subsearch: [ true | false ]
+idpurl=""	# IDP URL: (https://idp.xxx.yy)
+caslogurl=""	# CAS Login URL
+casurl=""	# CAS URL
+certOrg=""	# Certificate organisation string
+certC=""	# Certificate country string (SE)
