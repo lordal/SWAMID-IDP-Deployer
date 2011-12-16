@@ -7,7 +7,7 @@
 # Version 1.1                                                                #
 #                                                                            #
 # Deploys a working IDP for SWAMID on an Ubuntu system                       #
-# Uses: jboss-as-distribution-6.1.0.Final or tomcat6                         #
+# Uses: jboss-as-distribution-6.1.0.Final or tomcat                          #
 #       shibboleth-identityprovider-2.3.5                                    #
 #       cas-client-3.2.1-release                                             #
 #                                                                            #
@@ -28,9 +28,6 @@ upgrade=0
 files=""
 messages=""
 shibVer="2.3.5"
-certpath="/opt/shibboleth-idp/ssl/"
-httpsP12="/opt/shibboleth-idp/credentials/https.p12"
-certREQ="${certpath}tomcat.req"
 
 if [ "$USERNAME" != "root" ]
 then
@@ -39,16 +36,12 @@ then
 fi
 
 # set JAVA_HOME, script path and check for upgrade
-if [ -z "$JAVA_HOME" ]
+export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/
+if [ -z "`grep 'JAVA_HOME' /root/.bashrc`" ]
 then
-	export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/
-	if [ -z "`grep 'JAVA_HOME' /root/.bashrc`" ]
-	then
-		echo "export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/" >> /root/.bashrc
-	fi
+	echo "export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/" >> /root/.bashrc
 fi
 ts=`date "+%s"`
-javaCAcerts="${JAVA_HOME}/lib/security/cacerts"
 Spath="$(cd "$(dirname "$0")" && pwd)"
 if [ -L "/opt/shibboleth-identityprovider" -a -d "/opt/shibboleth-idp" ]
 then
@@ -181,18 +174,9 @@ then
 		read fticks
 		echo ""
 	fi
-	if [ -z "$selfsigned" ]
-	then
-		echo "Create a self signed certificate for https [ y | n ]"
-		read selfsigned
-		echo ""
-	fi
 
 	echo "IDP keystore password (empty string generates new password)"
 	read pass
-	echo ""
-	echo "Keystore password for https (empty string generates new password)"
-	read httpspass
 fi
 
 
@@ -293,16 +277,12 @@ else
 	# install depends
 	echo "Updating apt and installing dependancies"
 	apt-get -qq update
-	apt-get -qq install unzip default-jre apg wget
+	apt-get -qq install unzip default-jre apache2 apg wget
 
 	# generate keystore pass
 	if [ -z "$pass" ]
 	then
-		pass=`apg -m20 -E '"!#<>\' -n 1 -a 0`
-	fi
-	if [ -z "$httpspass" ]
-	then
-		httpspass=`apg -m20 -E '"!#<>\' -n 1 -a 0`
+		pass=`apg -m20 -E '"!<>\' -n 1 -a 0`
 	fi
 	idpfqdn=`echo $idpurl | awk -F\/ '{print $3}'`
 
@@ -318,7 +298,7 @@ else
 
 	if [ "$appserv" = "tomcat" ]
 	then
-		test=`dpkg -s tomcat6 > /dev/null 2>&1`
+		test=`dpkg -s tomcat6 > /dev/null`
 		isInstalled=$?
 		if [ "$isInstalled" -ne 0 ]
 		then
@@ -347,8 +327,6 @@ else
 	if [ "$appserv" = "jboss" ]
 	then
 		unzip -q ${Spath}/files/jboss-as-distribution-6.1.0.Final.zip
-		chmod 755 jboss-6.1.0.Final
-		ln -s /opt/jboss-6.1.0.Final /opt/jboss
 	fi
 
 	unzip -q ${Spath}/files/shibboleth-identityprovider-${shibVer}-bin.zip
@@ -360,6 +338,13 @@ else
 	fi
 
 	chmod 755 shibboleth-identityprovider-${shibVer}
+	if [ "$appserv" = "jboss" ]
+	then
+		chmod 755 jboss-6.1.0.Final
+		ln -s /opt/jboss-6.1.0.Final /opt/jboss
+	fi
+
+	# create links
 	ln -s shibboleth-identityprovider-${shibVer} shibboleth-identityprovider
 
 	if [ "$type" = "cas" ]
@@ -370,7 +355,73 @@ else
 		mkdir /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/lib
 		cp /opt/cas-client-3.2.1/modules/cas-client-core-3.2.1.jar /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/lib
 		cp /opt/cas-client-3.2.1/modules/commons-logging-1.1.jar /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/lib
+	fi
 
+	# create a default website for port 80
+	cp ${Spath}/xml/index.html /var/www
+
+	# Get TCS CA chain, import ca-certs java and create cert request
+	mkdir -p /etc/apache2/ssl/
+	cd /etc/apache2/ssl/
+	echo "Fetching TCS CA chain from web"
+	wget -q -O /etc/apache2/ssl/server.chain http://webkonto.hig.se/chain.pem
+
+	echo "Installing TCS CA chain in java testcacert keystore"
+	cnt=1
+	for i in `cat /etc/apache2/ssl/server.chain | perl -npe 's/\ /\*\*\*/g'`
+	do
+		n=`echo $i | perl -npe 's/\*\*\*/\ /g'`
+		echo $n >> /etc/apache2/ssl/${cnt}.root
+		ltest=`echo $n | grep "END CERTIFICATE"`
+		if [ ! -z "$ltest" ]
+		then
+			cnt=`expr $cnt + 1`
+		fi
+	done
+	ccnt=1
+	while [ $ccnt -lt $cnt ]
+	do
+		subject=`openssl x509 -noout -in /etc/apache2/ssl/$ccnt.root -subject | awk -F/ '{print $NF}' |cut -d= -f2`
+		test=`keytool -list -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit -alias "$subject"`
+		res=$?
+		if [ $res -ne 0 ]
+		then
+			keytool -import -trustcacerts -alias "$subject" -file /etc/apache2/ssl/${ccnt}.root -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit 2>/dev/null
+		fi
+		files="`echo $files` /etc/apache2/ssl/${ccnt}.root"
+		ccnt=`expr $ccnt + 1`
+	done
+
+	if [ ! -s "/etc/apache2/ssl/server.key" ]
+	then
+		echo "Generating SSL key and certificate request"
+		openssl genrsa -out /etc/apache2/ssl/server.key 2048 2>/dev/null
+		openssl req -new -key /etc/apache2/ssl/server.key -out /etc/apache2/ssl/server.csr -config ${Spath}/files/openssl.cnf -subj "/CN=${idpfqdn}/O=${certOrg}/C=${certC}"
+	else
+		messages="`/bin/echo -e $messages`\nFound apache SSL key, no key or request generated."
+	fi
+
+
+	# prepare config from templates
+	cat ${Spath}/xml/server.xml.diff.template.${appserv} | perl -npe "s/Sup3rS3cr37/$pass/" > ${Spath}/xml/server.xml.diff
+	files="`echo $files` ${Spath}/xml/server.xml.diff"
+
+	ldapServerStr=""
+	for i in `echo $ldapserver`
+	do
+		ldapServerStr="`echo $ldapServerStr` ldap://$i"
+	done
+	ldapServerStr=`echo $ldapServerStr | perl -npe 's/^\s+//'`
+	cat ${Spath}/xml/attribute-resolver.xml.diff.template \
+		| perl -npe "s#LdApUrI#$ldapServerStr#" \
+		| perl -npe "s/LdApBaSeDn/$ldapbasedn/" \
+		| perl -npe "s/LdApCrEdS/$ldapbinddn/" \
+		| perl -npe "s/LdApPaSsWoRd/$ldappass/" \
+		> ${Spath}/xml/attribute-resolver.xml.diff
+	files="`echo $files` ${Spath}/xml/attribute-resolver.xml.diff"
+
+	if [ "$type" = "cas" ]
+	then
 		cat ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff.template \
 			| perl -npe "s#IdPuRl#$idpurl#" \
 			| perl -npe "s#CaSuRl#$caslogurl#" \
@@ -397,108 +448,51 @@ else
 	/bin/echo -e "\n\n\n"
 	sh install.sh -Didp.home.input="/opt/shibboleth-idp" -Didp.hostname.input="${idpfqdn}" -Didp.keystore.pass="${pass}"
 
+	cp ${Spath}/files/md-signer.crt /opt/shibboleth-idp/credentials
 
-	# prepare config from templates
-	cat ${Spath}/xml/server.xml.${appserv} \
-		| perl -npe "s#ShIbBKeyPaSs#${pass}#" \
-		| perl -npe "s#HtTpSkEyPaSs#${httpspass}#" \
-		| perl -npe "s#HtTpSJkS#${httpsP12}#" \
-		| perl -npe "s#TrUsTsToRe#${javaCAcerts}#" \
-		> ${Spath}/xml/server.xml
-	files="`echo $files` ${Spath}/xml/server.xml"
-
-	ldapServerStr=""
-	for i in `echo $ldapserver`
-	do
-		ldapServerStr="`echo $ldapServerStr` ldap://$i"
-	done
-	ldapServerStr=`echo $ldapServerStr | perl -npe 's/^\s+//'`
-	cat ${Spath}/xml/attribute-resolver.xml.diff.template \
-		| perl -npe "s#LdApUrI#$ldapServerStr#" \
-		| perl -npe "s/LdApBaSeDn/$ldapbasedn/" \
-		| perl -npe "s/LdApCrEdS/$ldapbinddn/" \
-		| perl -npe "s/LdApPaSsWoRd/$ldappass/" \
-		> ${Spath}/xml/attribute-resolver.xml.diff
-	files="`echo $files` ${Spath}/xml/attribute-resolver.xml.diff"
-
-	# Get TCS CA chain, import ca-certs into java and create https cert request
-	mkdir -p ${certpath}
-	cd ${certpath}
-	echo "Fetching TCS CA chain from web"
-	wget -q -O ${certpath}server.chain http://webkonto.hig.se/chain.pem
-
-	echo "Installing TCS CA chain in java cacert keystore"
-	cnt=1
-	for i in `cat ${certpath}server.chain | perl -npe 's/\ /\*\*\*/g'`
-	do
-		n=`echo $i | perl -npe 's/\*\*\*/\ /g'`
-		echo $n >> ${certpath}${cnt}.root
-		ltest=`echo $n | grep "END CERTIFICATE"`
-		if [ ! -z "$ltest" ]
-		then
-			cnt=`expr $cnt + 1`
-		fi
-	done
-	ccnt=1
-	while [ $ccnt -lt $cnt ]
-	do
-		subject=`openssl x509 -noout -in ${certpath}$ccnt.root -subject | awk -F/ '{print $NF}' |cut -d= -f2`
-		test=`keytool -list -keystore ${javaCAcerts} -storepass changeit -alias "$subject"`
-		res=$?
-		if [ $res -ne 0 ]
-		then
-			keytool -import -trustcacerts -alias "$subject" -file ${certpath}${ccnt}.root -keystore ${javaCAcerts} -storepass changeit 2>/dev/null
-		fi
-		files="`echo $files` ${certpath}${ccnt}.root"
-		ccnt=`expr $ccnt + 1`
-	done
-
-	if [ ! -s "${httpsP12}" ]
+	# patch config files
+	echo "Patching config files"
+	cp /etc/apache2/sites-enabled/000-default /etc/apache2/sites-enabled/000-default.dist
+	if [ -z "`cat /etc/apache2/sites-enabled/000-default | grep 'VirtualHost \*:443>'`" ]
 	then
-		echo "Generating SSL key and certificate request"
-		openssl genrsa -out ${certpath}server.key 2048 2>/dev/null
-		openssl req -new -key ${certpath}server.key -out $certREQ -config ${Spath}/files/openssl.cnf -subj "/CN=${idpfqdn}/O=${certOrg}/C=${certC}"
-	fi
-	if [ "$selfsigned" = "n" ]
-	then
-		messages="`/bin/echo -e $messages`\nPut the certificate from TCS in the file: ${certpath}server.crt"
-		messages="`/bin/echo -e $messages`\nRun: openssl pkcs12 -export -in ${certpath}server.crt -inkey ${certpath}server.key -out ${httpsP12} -name tomcat -passout pass:${httpspass}"
+		cat ${Spath}/xml/apache2-000-default.add >> /etc/apache2/sites-enabled/000-default
 	else
-		openssl x509 -req -days 365 -in $certREQ -signkey ${certpath}server.key -out ${certpath}server.crt
-		openssl pkcs12 -export -in ${certpath}server.crt -inkey ${certpath}server.key -out ${httpsP12} -name tomcat -passout pass:${httpspass}
+		messages="`/bin/echo -e $messages`\nSSL port already configured in apache config"
 	fi
+	patch /opt/shibboleth-idp/conf/handler.xml -i ${Spath}/${prep}/handler.xml.diff
+	patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/relying-party.xml.diff
+	patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/attribute-filter.xml.diff
+	patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/attribute-resolver.xml.diff
 
 	# application server specific
+	if [ "$appserv" = "tomcat" ]
+	then
+	fi
 	if [ "$appserv" = "jboss" ]
 	then
 		if [ "$type" = "ldap" ]
 		then
-			ldapServerStr=""
-			for i in `echo $ldapserver`
-			do
-				ldapServerStr="`echo $ldapServerStr` ldap://$i"
-			done
-			ldapServerStr=`echo $ldapServerStr | perl -npe 's/^\s+//'`
-
 			cat ${Spath}/${prep}/login-config.xml.diff.template \
 				| perl -npe "s#LdApUrI#$ldapServerStr#" \
 				| perl -npe "s/LdApBaSeDn/$ldapbasedn/" \
 				| perl -npe "s/SuBsEaRcH/$subsearch/" \
 				> ${Spath}/${prep}/login-config.xml.diff
 			files="`echo $files` ${Spath}/${prep}/login-config.xml.diff"
+		fi
+		patch /opt/jboss/server/default/deploy/jbossweb.sar/server.xml -i ${Spath}/xml/server.xml.diff
+		chmod o-rwx /opt/jboss/server/default/deploy/jbossweb.sar/server.xml
+
+		if [ "$type" = "ldap" ]
+		then
 			patch /opt/jboss/server/default/conf/login-config.xml -i ${Spath}/${prep}/login-config.xml.diff
 		fi
-
-		ln -s /opt/shibboleth-idp/war/idp.war /opt/jboss/server/default/deploy/
-
-		cp ${Spath}/xml/server.xml /opt/jboss/server/default/deploy/jbossweb.sar/server.xml
-		chmod o-rwx /opt/jboss/server/default/deploy/jbossweb.sar/server.xml
 
 		echo "Add basic jboss init script to start on boot"
 		cp ${Spath}/files/jboss /etc/init.d/
 		update-rc.d jboss defaults
+		ln -s /opt/shibboleth-idp/war/idp.war /opt/jboss/server/default/deploy/
 	fi
-
+	
 	if [ "$appserv" = "tomcat" ]
 	then
 		if [ "$type" = "ldap" ]
@@ -508,17 +502,14 @@ else
 			do
 				ldapServerStr="`echo $ldapServerStr` ldap://${i}:389"
 			done
-
 			cat ${Spath}/${prep}/login.conf.diff.template \
 				| perl -npe "s#LdApUrI#$ldapServerStr#" \
 				| perl -npe "s/LdApBaSeDn/$ldapbasedn/" \
 				> ${Spath}/${prep}/login.conf.diff
 			files="`echo $files` ${Spath}/${prep}/login.conf.diff"
-			patch /opt/shibboleth-idp/conf/login.config -i ${Spath}/${prep}/login.conf.diff
 		fi
 
 		cp ${Spath}/xml/tomcat.idp.xml /var/lib/tomcat6/conf/Catalina/localhost/idp.xml
-
 		if [ ! -d "/usr/share/tomcat6/endorsed" ]
 		then
 			mkdir /usr/share/tomcat6/endorsed
@@ -530,42 +521,33 @@ else
 		then
 			JAVA_OPTS="$JAVA_OPTS -Djava.endorsed.dirs=/usr/share/tomcat6/endorsed"
 			echo "JAVA_OPTS=\"$JAVA_OPTS\"" >> /etc/default/tomcat6
-			echo "AUTHBIND=yes" >> /etc/default/tomcat6
 		else
 			messages="`/bin/echo -e $messages`\nJAVA_OPTS for tomcat already configured"
-		fi
-		if [ "${AUTHBIND}" != "yes" ]
-		then
-			echo "AUTHBIND=yes" >> /etc/default/tomcat6
-		else
-			messages="`/bin/echo -e $messages`\nAUTHBIND for tomcat already configured"
 		fi
 
 		wget -q -O /usr/share/tomcat6/lib/tomcat6-dta-ssl-1.0.0.jar http://shibboleth.internet2.edu/downloads/maven2/edu/internet2/middleware/security/tomcat6/tomcat6-dta-ssl/1.0.0/tomcat6-dta-ssl-1.0.0.jar
 
-		cp /etc/tomcat6/server.xml /etc/tomcat6/server.xml.${ts}
-		cp ${Spath}/xml/server.xml /etc/tomcat6/server.xml
-		chmod o-rwx /etc/tomcat6/server.xml
-
-		if [ -d "/var/lib/tomcat6/webapps/ROOT" ]
+		portcheck=`grep -A9 'port="8443"' /etc/tomcat6/server.xml`
+		if [ -z "`echo $portcheck | grep keystorePass`" ]
 		then
-			mv /var/lib/tomcat6/webapps/ROOT /opt/disabled.tomcat6.webapps.ROOT
+			echo "Patching tomcat config"
+			patch /etc/tomcat6/server.xml -i ${Spath}/xml/server.xml.diff
+		else
+			messages="`/bin/echo -e $messages`\nPort 8443 already configured in tomcat server.xml, configure keystore manually. Pass is '${pass}'"
+		fi
+		chmod o-rwx /etc/tomcat6/server.xml
+		mv /var/lib/tomcat6/webapps/ROOT /opt/disabled.tomcat6.webapps.ROOT
+
+		if [ "$type" = "ldap" ]
+		then
+			patch /opt/shibboleth-idp/conf/login.config -i ${Spath}/${prep}/login.conf.diff
 		fi
 
 		chown tomcat6 /opt/shibboleth-idp/metadata
 		chown -R tomcat6 /opt/shibboleth-idp/logs/
 
-		cp /usr/share/tomcat6/lib/servlet-api.jar /opt/shibboleth-idp/lib/
 	fi
 
-	cp ${Spath}/files/md-signer.crt /opt/shibboleth-idp/credentials
-
-	# patch shibboleth config files
-	echo "Patching config files"
-	patch /opt/shibboleth-idp/conf/handler.xml -i ${Spath}/${prep}/handler.xml.diff
-	patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/relying-party.xml.diff
-	patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/attribute-filter.xml.diff
-	patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/attribute-resolver.xml.diff
 
 	if [ "$google" != "n" ]
 	then
@@ -587,6 +569,11 @@ else
 		fi
 	fi
 
+	# enable apache modules required
+	echo "Enable apache modules"
+	a2enmod ssl
+	a2enmod proxy
+	a2enmod proxy_ajp
 
 	# add crontab entry for ntpdate
 	test=`crontab -l |grep "$ntpserver" |grep ntpdate`
@@ -596,9 +583,9 @@ else
 		CRONTAB=`crontab -l | perl -npe 's/^$//'`
 		if [ ! -z "$CRONTAB" ]
 		then
-			CRONTAB="${CRONTAB}\n"
+			CRONTAB="$CRONTAB\n"
 		fi
-		/bin/echo -e "${CRONTAB}*/5 *  *   *   *     /usr/sbin/ntpdate $ntpserver > /dev/null 2>&1" | crontab
+		/bin/echo -e "$CRONTAB*/5 *  *   *   *     /usr/sbin/ntpdate $ntpserver > /dev/null 2>&1" | crontab
 	fi
 fi
 
@@ -624,13 +611,12 @@ then
 	echo "Upgrade done."
 	echo "A backup of the previos shibboleth installation is saved in: /opt/backup-shibboleth-idp.${ts}.tar.gz"
 else
-	if [ "$selfsigned" = "n" ]
-	then
-		cat $certREQ
-		echo "Here is the certificate request, go get at cert!"
-		echo "Or replace the cert files in ${certpath}"
-		/bin/echo -e "\n\nNOTE!!! the keystore for https is a PKCS12 store\n\n"
-	fi
+	cat /etc/apache2/ssl/server.csr
+	echo "Here is the certificate request, go get at cert!"
+	echo "Or replace the cert files in /etc/apache2/ssl"
+	echo "For a self signed certificate run the following as root:"
+	echo "     openssl x509 -req -days 365 -in /etc/apache2/ssl/server.csr -signkey /etc/apache2/ssl/server.key -out /etc/apache2/ssl/server.crt"
+	echo "After the cert is in place (/etc/apache2/ssl/server.crt), reboot host and check if it works."
 	echo ""
 	echo "Register at testshib.org and register idp, and run a logon test."
 	echo "Certificate for testshib is in the file: /opt/shibboleth-idp/credentials/idp.crt"

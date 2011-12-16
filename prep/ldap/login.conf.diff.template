@@ -1,0 +1,8 @@
+36a37,43
+>    edu.vt.middleware.ldap.jaas.LdapLoginModule required
+>       ldapUrl="LdApUrI"
+>       baseDn="LdApBaSeDn"
+>       tls="true"
+>       userFilter="uid={0}"
+>    ;
+> 

@@ -131,8 +131,8 @@
 > 
 314a427,438
 > 	<resolver:DataConnector id="myLDAP" xsi:type="dc:LDAPDirectory"
-> 		ldapURL="ldap://LdApUrI" 
-> 		baseDN="LdApBaSeDn" 
+> 		ldapURL="LdApUrI"
+> 		baseDN="LdApBaSeDn"
 > 		principal="LdApCrEdS"
 > 		principalCredential="LdApPaSsWoRd">
 > 		<dc:FilterTemplate>
