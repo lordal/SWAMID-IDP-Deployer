@@ -1,0 +1,53 @@
+Disclamer
+-------------------------------------------------------------------------------
+
+Intended to be used on a clean install of Ubuntu Server (10.04 or newer).
+Upgrade mode is only to be used on a previous deployment of this script.
+
+
+Introduction
+-------------------------------------------------------------------------------
+
+This script will install a IDP for use in SWAMID.
+Uses Tomcat6 or Jboss 6.1 final
+
+Dependencies will be installed with "apt" of will be fetched from the web.
+
+Can use LDAP or CAS for authentication
+Depends on an LDAP repository for attribute store
+
+Attribute release based on the following LDAP schemas:
+posixAccount
+inetOrgPerson
+eduPerson
+norEduPerson
+
+If your attributes is stored in diffrent LDAP attributes, modify the file:
+/opt/shibboleth-idp/conf/attribute-resolver.xml
+(Change: "sourceAttributeID")
+For Swedish civic registration numbers see:
+https://portal.nordu.net/display/SWAMI/norEduPersonNIN+och+Svenska+Personnummer
+
+Anonymous usage reporting to SWAMID is optional.
+
+
+Upgrading
+-------------------------------------------------------------------------------
+
+Upgrading will only upgrade shibboleth.
+You cannot change authentication method.
+If you use LDAP authentication you will have to redo the login page
+customization after an upgrade.
+
+
+Configuration
+-------------------------------------------------------------------------------
+
+Configuration values can be predefined in the file "config", otherwise
+questions will be asked.
+
+Attribute release is configured for the following consumers:
+testshib.org
+antagning.se/studera.nu
+And the recommended initial attribute filter policy for swamid.se
+
