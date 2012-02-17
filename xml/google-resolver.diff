@@ -1,7 +1,0 @@
-380a381,385
-> <resolver:AttributeDefinition id="principal" xsi:type="PrincipalName" xmlns="urn:mace:shibboleth:2.0:resolver:ad">
->     <resolver:AttributeEncoder xsi:type="enc:SAML2StringNameID" xmlns="urn:mace:shibboleth:2.0:attribute:encoder"
->         nameFormat="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified" />
-> </resolver:AttributeDefinition>
-> 
-

@@ -1,0 +1,52 @@
+399a400,428
+> <resolver:AttributeDefinition id="eduPersonTargetedID" xsi:type="SAML2NameID"
+>         xmlns="urn:mace:shibboleth:2.0:resolver:ad"
+>         sourceAttributeID="persistentId">
+> 
+>    <resolver:Dependency ref="StoredId" />
+> 
+>    <resolver:AttributeEncoder xsi:type="SAML1XMLObject" xmlns="urn:mace:shibboleth:2.0:attribute:encoder"
+>              name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10" />
+> 
+>    <resolver:AttributeEncoder xsi:type="SAML2XMLObject" xmlns="urn:mace:shibboleth:2.0:attribute:encoder"
+>              name="urn:oid:1.3.6.1.4.1.5923.1.1.1.10" friendlyName="eduPersonTargetedID" />
+> </resolver:AttributeDefinition>
+> 
+> <resolver:AttributeDefinition id="persistentId" xsi:type="ad:PrincipalName"
+>       xmlns="urn:mace:shibboleth:2.0:resolver:ad"
+>       sourceAttributeID="persistentId">
+> 
+>    <resolver:Dependency ref="StoredId"/>
+> 
+>    <resolver:AttributeEncoder xsi:type="SAML1StringNameIdentifier"
+>        xmlns="urn:mace:shibboleth:2.0:attribute:encoder"
+>        nameFormat="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" />
+> 
+>    <resolver:AttributeEncoder xsi:type="SAML2StringNameID"
+>        xmlns="urn:mace:shibboleth:2.0:attribute:encoder"
+>        nameFormat="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" />
+> </resolver:AttributeDefinition>
+> 
+> 
+500a530,545
+>     <resolver:DataConnector id="StoredId"
+>             xsi:type="StoredId"
+>             xmlns="urn:mace:shibboleth:2.0:resolver:dc"
+>             generatedAttributeID="persistentId"
+>             sourceAttributeID="uid"
+>             salt="Large_Random_Salt_Value">
+>        <resolver:Dependency ref="uid" />
+>        <ApplicationManagedConnection
+>             jdbcDriver="com.mysql.jdbc.Driver"
+>             jdbcURL="jdbc:mysql://localhost:3306/shibboleth?autoReconnect=true"
+>             jdbcUserName="shibboleth"
+>             jdbcPassword="SqLpAsSwOrD" />
+>     </resolver:DataConnector>
+> 
+> 
+> 
+506a552,555
+>     <resolver:PrincipalConnector xsi:type="StoredId" xmlns="urn:mace:shibboleth:2.0:resolver:pc" id="saml2Persistent"
+>         nameIDFormat="urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+>         storedIdDataConnectorRef="StoredId" />
+> 

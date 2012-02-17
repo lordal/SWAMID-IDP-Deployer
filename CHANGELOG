@@ -1,0 +1,18 @@
+Changelog
+
+1.4	Added SWAMID recommended static organisation attributes
+	Added a question for LDAP attribute used for norEduPersonNIN
+
+1.3	Added a whiptail UI
+	Added a confirmation step before start of install
+	Code cleanup
+
+1.2	Added support for stored pseudonym identifiers (EPTID)
+
+1.1	Changed shibboleth version from 2.4.4 to 2.4.5
+	Added support for anonymous usage reporting to SWAMID
+	Added support for tomcat6 application server
+	Removed apache HTTPD dependancy
+
+1.0	First working implementation
+	Using apache HTTPD and Jboss AS6

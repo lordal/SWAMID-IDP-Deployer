@@ -1,4 +1,4 @@
-67a68,172
+67a68,185
 > 
 > <!-- Release to testshib.org -->
 > 	<afp:AttributeFilterPolicy id="testShib">
@@ -68,6 +68,7 @@
 > 	<afp:AttributeFilterPolicy id="swamid">
 > 		<afp:PolicyRequirementRule xsi:type="basic:OR">
 > 			<basic:Rule xsi:type="saml:AttributeRequesterInEntityGroup" groupID="http://md.swamid.se/md/swamid-1.0.xml" />
+> 			<basic:Rule xsi:type="saml:AttributeRequesterInEntityGroup" groupID="http://md.swamid.se/md/swamid-2.0.xml" />
 > 			<basic:Rule xsi:type="saml:AttributeRequesterInEntityGroup" groupID="http://md.swamid.se/md/swamid-testing-1.0.xml" />
 > 		</afp:PolicyRequirementRule>
 > 
@@ -100,6 +101,18 @@
 > 				<basic:Rule xsi:type="basic:AttributeValueString" value="employee" ignoreCase="true" />
 > 				<basic:Rule xsi:type="basic:AttributeValueString" value="library-walk-in" ignoreCase="true" />
 > 			</afp:PermitValueRule>
+> 		</afp:AttributeRule>
+> 		<afp:AttributeRule attributeID="organizationName">
+> 			<afp:PermitValueRule xsi:type="basic:ANY" />
+> 		</afp:AttributeRule>
+> 		<afp:AttributeRule attributeID="norEduOrgAcronym">
+> 			<afp:PermitValueRule xsi:type="basic:ANY" />
+> 		</afp:AttributeRule>
+> 		<afp:AttributeRule attributeID="countryName">
+> 			<afp:PermitValueRule xsi:type="basic:ANY" />
+> 		</afp:AttributeRule>
+> 		<afp:AttributeRule attributeID="friendlyCountryName">
+> 			<afp:PermitValueRule xsi:type="basic:ANY" />
 > 		</afp:AttributeRule>
 > 	</afp:AttributeFilterPolicy>
 > 
