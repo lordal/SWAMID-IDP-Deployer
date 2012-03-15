@@ -1,4 +1,4 @@
-67a68,185
+67a68,186
 > 
 > <!-- Release to testshib.org -->
 > 	<afp:AttributeFilterPolicy id="testShib">
@@ -34,6 +34,7 @@
 > 
 > 			<basic:Rule xsi:type="basic:AttributeRequesterString" value="https://www.antagning.se/aws-sp" />
 > 			<basic:Rule xsi:type="basic:AttributeRequesterString" value="https://www.antagning.se/ecs-sp" />
+> 			<basic:Rule xsi:type="basic:AttributeRequesterString" value="https://www.universityadmissions.se/aws-sp-en" />
 > 
 > 			<basic:Rule xsi:type="basic:AttributeRequesterString" value="https://www.studera.testa.antagning.se/shibboleth-sp" />
 > 			<basic:Rule xsi:type="basic:AttributeRequesterString" value="https://www.studera.testb.antagning.se/shibboleth-sp" />

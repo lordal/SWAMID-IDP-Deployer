@@ -1016,6 +1016,7 @@ EOF
 
 	wget -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
 	cFinger=`openssl x509 -noout -fingerprint -sha1 -in ${idpPath}/credentials/md-signer.crt | cut -d\= -f2`
+	cCnt=1
 	while [ "${cFinger}" != "${mdSignerFinger}" -a "${cCnt}" -le 10 ]
 	do
 		wget -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
