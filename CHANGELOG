@@ -1,5 +1,13 @@
 Changelog
 
+1.5	Changed shibboleth version from 2.4.5 to 2.4.6
+	Code cleanup
+	Fixed problems with fticks install
+	Added support for other java versions than default-jre (add java binary to path)
+	Added default values to more options
+	Removed "apg" dependancy
+	Added certificate collection from LDAP servers
+
 1.4	Added SWAMID recommended static organisation attributes
 	Added a question for LDAP attribute used for norEduPersonNIN
 

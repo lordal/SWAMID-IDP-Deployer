@@ -4,17 +4,18 @@
 # Shibboleth deployment script by Anders Lördal                              #
 # Högskolan i Gävle and SWAMID                                               #
 #                                                                            #
-# Version 1.4                                                                #
+# Version 1.5                                                                #
 #                                                                            #
 # Deploys a working IDP for SWAMID on an Ubuntu system                       #
 # Uses: jboss-as-distribution-6.1.0.Final or tomcat6                         #
-#       shibboleth-identityprovider-2.3.5                                    #
+#       shibboleth-identityprovider-2.3.6                                    #
 #       cas-client-3.2.1-release                                             #
 #       mysql-connector-java-5.1.18 (for EPTID)                              #
 #                                                                            #
 # Templates are provided for CAS and LDAP authentication                     #
 #                                                                            #
-# To disable the whiptail gui run with argument "-cli"                       #
+# To disable the whiptail gui run with argument "-c"                         #
+# To keep generated files run with argument "-k"                             #
 #                                                                            #
 # To add a new template for another authentication, just add a new directory #
 # under the "prep" directory, add the neccesary .diff files and add any      #
@@ -29,22 +30,55 @@ mdSignerFinger="12:60:D7:09:6A:D9:C1:43:AD:31:88:14:3C:A8:C4:B7:33:8A:4F:CB"
 # Set cleanUp to 0 (zero) for debugging of created files
 cleanUp=1
 # Default enable of whiptail UI
-sUI=y
+GUIen=y
+# Version of shibboleth IDP
+shibVer="2.3.6"
 
+# Default values
 upgrade=0
+Spath="$(cd "$(dirname "$0")" && pwd)"
 files=""
-shibVer="2.3.5"
+ts=`date "+%s"`
+whiptailBin=`which whiptail`
 whipSize="13 75"
 certpath="/opt/shibboleth-idp/ssl/"
 httpsP12="/opt/shibboleth-idp/credentials/https.p12"
 certREQ="${certpath}tomcat.req"
-Dname=`hostname`
-Dname=`host -t A ${Dname} | awk '{print $1}' | cut -d\. -f2-`
-apgCmd="apg -m20 -E '\"!#<>/\' -n 1 -a 0"
+FQDN=`hostname`
+FQDN=`host -t A ${FQDN} | awk '{print $1}'`
+Dname=`echo ${FQDN} | cut -d\. -f2-`
+if [ "${FQDN}" = "Host" ]
+then
+	myInterface=`netstat -nr |grep "^0.0.0.0" |awk '{print $NF}'`
+	myIP=`ip addr list ${myInterface} |grep "inet " |cut -d' ' -f6|cut -d/ -f1`
+	Dname=`host -t A ${myIP} | awk '{print $NF}' | cut -d\. -f2- | sed 's/\.$//'`
+	FQDN=`host -t A ${myIP} | awk '{print $NF}' | sed 's/\.$//'`
+fi
+passGenCmd="openssl rand -base64 20"
+messages="${Spath}/msg.txt"
+statusFile="${Spath}/status.log"
+echo "" > ${statusFile}
 bupFile="/opt/backup-shibboleth-idp.${ts}.tar.gz"
 idpPath="/opt/shibboleth-idp/"
 certificateChain="http://webkonto.hig.se/chain.pem"
 tomcatDepend="http://shibboleth.internet2.edu/downloads/maven2/edu/internet2/middleware/security/tomcat6/tomcat6-dta-ssl/1.0.0/tomcat6-dta-ssl-1.0.0.jar"
+
+if [ ! -x "${whiptailBin}" ]
+then
+	GUIen="n"
+fi
+
+while getopts ":ck" opt
+do
+	case $opt in
+		"c")
+			GUIen="n"
+		;;
+		"k")
+			cleanUp="0"
+		;;
+	esac
+done
 
 if [ "${USERNAME}" != "root" ]
 then
@@ -75,48 +109,49 @@ cleanBadInstall() {
 	fi
 }
 
-
-
-# set JAVA_HOME, script path and check for upgrade
-if [ -z "${JAVA_HOME}" ]
-then
-	export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/
-	if [ -z "`grep 'JAVA_HOME' /root/.bashrc`" ]
+setJavaHome () {
+	javaBin=`which java`
+	if [ -z "${JAVA_HOME}" ]
 	then
-		echo "export JAVA_HOME=/usr/lib/jvm/java-6-openjdk/jre/" >> /root/.bashrc
+		# check java
+		if [ -L "${javaBin}" ]
+		then
+			export JAVA_HOME=`readlink -f ${javaBin} | awk -F'bin' '{print $1}'`
+		else
+			if [ -s "${javaBin}" ]
+			then
+				export JAVA_HOME=`${javaBin} -classpath ${Spath}/files/ getJavaHome`
+			else
+				echo "No java found, please install JRE"
+				exit 1
+			fi
+		fi
+		if [ -z "`grep 'JAVA_HOME' /root/.bashrc`" ]
+		then
+			echo "export JAVA_HOME=${JAVA_HOME}" >> /root/.bashrc
+		fi
 	fi
+}
+
+
+if [ -f "${Spath}/config" ]
+then
+	. ${Spath}/config
 fi
-ts=`date "+%s"`
-javaCAcerts="${JAVA_HOME}/lib/security/cacerts"
-Spath="$(cd "$(dirname "$0")" && pwd)"
-messages="${Spath}/msg.txt"
+prep="prep/${type}"
 
 if [ -L "/opt/shibboleth-identityprovider" -a -d "/opt/shibboleth-idp" ]
 then
 	upgrade=1
 fi
 
-if [ ! -x "/usr/bin/whiptail" ]
-then
-	sUI="n"
-fi
-if [ "$1" = "-cli" ]
-then
-	sUI="n"
-fi
-
-if [ -f "${Spath}/config" ]
-then
-	. ${Spath}/config
-fi
-
 if [ "${upgrade}" -eq 0 ]
 then
 	if [ -z "${appserv}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			appserv=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Application server" --nocancel --menu --clear  -- "Which application server do you want to use?" ${whipSize} 2 \
+			appserv=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Application server" --nocancel --menu --clear  -- "Which application server do you want to use?" ${whipSize} 2 \
 				tomcat "Apache Tomcat 6" jboss "Jboss Application server 6" 3>&1 1>&2 2>&3)
 		else
 			echo "Application server [ tomcat | jboss ]"
@@ -127,9 +162,9 @@ then
 
 	if [ -z "${type}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			tList="whiptail --backtitle \"SWAMID IDP Deployer\" --title \"Authentication type\" --nocancel --menu --clear -- \"Which authentication type do you want to use?\" ${whipSize} 2"
+			tList="${whiptailBin} --backtitle \"SWAMID IDP Deployer\" --title \"Authentication type\" --nocancel --menu --clear -- \"Which authentication type do you want to use?\" ${whipSize} 2"
 			for i in `ls ${Spath}/prep | perl -npe 's/\n/\ /g'`
 			do
 				tDesc=`cat ${Spath}/prep/${i}/.desc`
@@ -146,9 +181,9 @@ then
 
 	if [ -z "${google}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			whiptail --backtitle "SWAMID IDP Deployer" --title "Attributes to Google" --yesno --clear -- \
+			${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Attributes to Google" --yesno --clear -- \
 				"Do you want to release attributes to google?\n\nSwamid, Swamid-test and testshib.org installed as standard" ${whipSize} 3>&1 1>&2 2>&3
 			googleNum=$?
 			google="n"
@@ -165,9 +200,9 @@ then
 
 	while [ "${google}" != "n" -a -z "${googleDom}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			googleDom=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Your Google domain name" --nocancel --inputbox --clear -- \
+			googleDom=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Your Google domain name" --nocancel --inputbox --clear -- \
 				"Please input your Google domain name (student.xxx.yy)." ${whipSize} "student.${Dname}" 3>&1 1>&2 2>&3)
 		else
 			echo "Your Google domain name: (student.xxx.yy)"
@@ -178,26 +213,25 @@ then
 
 	while [ -z "${ntpserver}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ntpserver=$(whiptail --backtitle "SWAMID IDP Deployer" --title "NTP server" --nocancel --inputbox --clear -- \
+			ntpserver=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "NTP server" --nocancel --inputbox --clear -- \
 				"Please input your NTP server address." ${whipSize} "ntp.${Dname}" 3>&1 1>&2 2>&3)
 		else
 			echo "Specify NTP server:"
 			read ntpserver
 			echo ""
 		fi
-		/usr/sbin/ntpdate ${ntpserver} > /dev/null 2>&1
 	done
 
 	while [ -z "${ldapserver}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ldapserver=$(whiptail --backtitle "SWAMID IDP Deployer" --title "LDAP server" --nocancel --inputbox --clear -- \
-				"Please input yout LDAP server(s) (ldap.xxx.yy).\n\nSeparate multiple servers with spaces." ${whipSize} "ldap.${Dname}" 3>&1 1>&2 2>&3)
+			ldapserver=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "LDAP server" --nocancel --inputbox --clear -- \
+				"Please input yout LDAP server(s) (ldap.xxx.yy).\n\nSeparate multiple servers with spaces.\nLDAPS is used by default." ${whipSize} "ldap.${Dname}" 3>&1 1>&2 2>&3)
 		else
-			echo "Specify LDAP URL: (ldap.xxx.yy) (seperate servers with space)"
+			echo "Specify LDAP URL: (ldap.xxx.yy) (seperate servers with space). LDAPS is used by default."
 			read ldapserver
 			echo ""
 		fi
@@ -205,9 +239,9 @@ then
 
 	while [ -z "${ldapbasedn}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ldapbasedn=$(whiptail --backtitle "SWAMID IDP Deployer" --title "LDAP Base DN" --nocancel --inputbox --clear -- \
+			ldapbasedn=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "LDAP Base DN" --nocancel --inputbox --clear -- \
 				"Please input your LDAP Base DN" ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "Specify LDAP Base DN:"
@@ -218,9 +252,9 @@ then
 
 	while [ -z "${ldapbinddn}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ldapbinddn=$(whiptail --backtitle "SWAMID IDP Deployer" --title "LDAP Bind DN" --nocancel --inputbox --clear -- \
+			ldapbinddn=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "LDAP Bind DN" --nocancel --inputbox --clear -- \
 				"Please input your LDAP Bind DN" ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "Specify LDAP Bind DN:"
@@ -231,9 +265,9 @@ then
 
 	while [ -z "${ldappass}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ldappass=$(whiptail --backtitle "SWAMID IDP Deployer" --title "LDAP Password" --nocancel --passwordbox --clear -- \
+			ldappass=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "LDAP Password" --nocancel --passwordbox --clear -- \
 				"Please input your LDAP Password:" ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "Specify LDAP Password:"
@@ -244,9 +278,9 @@ then
 
 	while [ "${type}" = "ldap" -a -z "${subsearch}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			whiptail --backtitle "SWAMID IDP Deployer" --title "LDAP Subsearch" --nocancel --yesno --clear -- \
+			${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "LDAP Subsearch" --nocancel --yesno --clear -- \
 				"Do you want to enable LDAP subtree search?" ${whipSize} 3>&1 1>&2 2>&3
 			subsearchNum=$?
 			subsearch="false"
@@ -263,9 +297,9 @@ then
 
 	while [ -z "${ninc}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			ninc=$(whiptail --backtitle "SWAMID IDP Deployer" --title "norEduPersonNIN" --nocancel --inputbox --clear -- \
+			ninc=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "norEduPersonNIN" --nocancel --inputbox --clear -- \
 				"Please specify LDAP attribute for norEduPersonNIN (YYYYMMDDnnnn)." ${whipSize} "norEduPersonNIN" 3>&1 1>&2 2>&3)
 		else
 			echo "LDAP attribute for norEduPersonNIN (YYYYMMDDnnnn)? (empty string for 'norEduPersonNIN')"
@@ -280,12 +314,10 @@ then
 
 	while [ -z "${idpurl}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			hostname=`hostname`
-			hostname=`host -t A ${hostname} | awk '{print $1}'`
-			idpurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "IDP URL" --nocancel --inputbox --clear -- \
-				"Please input the URL to this IDP (https://idp.xxx.yy)." ${whipSize} "https://${hostname}" 3>&1 1>&2 2>&3)
+			idpurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "IDP URL" --nocancel --inputbox --clear -- \
+				"Please input the URL to this IDP (https://idp.xxx.yy)." ${whipSize} "https://${FQDN}" 3>&1 1>&2 2>&3)
 		else
 			echo "Specify IDP URL: (https://idp.xxx.yy)"
 			read idpurl
@@ -297,9 +329,9 @@ then
 	then
 		while [ -z "${casurl}" ]
 		do
-			if [ "$sUI" = "y" ]
+			if [ "$GUIen" = "y" ]
 			then
-				casurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
+				casurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
 					"Please input the URL to yourCAS server (https://cas.xxx.yy/cas)." ${whipSize} "https://cas.${Dname}/cas" 3>&1 1>&2 2>&3)
 			else
 				echo "Specify CAS URL server: (https://cas.xxx.yy/cas)"
@@ -310,9 +342,9 @@ then
 
 		while [ -z "${caslogurl}" ]
 		do
-			if [ "$sUI" = "y" ]
+			if [ "$GUIen" = "y" ]
 			then
-				caslogurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
+				caslogurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
 					"Please input the Login URL to your CAS server (https://cas.xxx.yy/cas/login)." ${whipSize} "${casurl}/login" 3>&1 1>&2 2>&3)
 			else
 				echo "Specify CAS Login URL server: (https://cas.xxx.yy/cas/login)"
@@ -324,9 +356,9 @@ then
 
 	while [ -z "${certOrg}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			certOrg=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Certificate organisation" --nocancel --inputbox --clear -- \
+			certOrg=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Certificate organisation" --nocancel --inputbox --clear -- \
 				"Please input organisation name string for certificate request" ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "Organisation name string for certificate request:"
@@ -337,9 +369,9 @@ then
 
 	while [ -z "${certC}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			certC=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Certificate country" --nocancel --inputbox --clear -- \
+			certC=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Certificate country" --nocancel --inputbox --clear -- \
 				"Please input country string for certificate request." ${whipSize} 'SE' 3>&1 1>&2 2>&3)
 		else
 			echo "Country string for certificate request: (empty string for 'SE')"
@@ -354,9 +386,9 @@ then
 
 	while [ -z "${certAcro}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			certAcro=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Organisation acronym" --nocancel --inputbox --clear -- \
+			certAcro=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Organisation acronym" --nocancel --inputbox --clear -- \
 				"Please input organisation Acronym (eg. 'HiG')" ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "norEduOrgAcronym: (eg. 'HiG')"
@@ -367,10 +399,10 @@ then
 
 	while [ -z "${certLongC}" ]
 	do
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			certLongC=$(whiptail --backtitle "SWAMID IDP Deployer" --title "Country descriptor" --nocancel --inputbox --clear -- \
-				"Please input country descriptor (eg. 'Sweden')" ${whipSize} 3>&1 1>&2 2>&3)
+			certLongC=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Country descriptor" --nocancel --inputbox --clear -- \
+				"Please input country descriptor (eg. 'Sweden')" ${whipSize} 'Sweden' 3>&1 1>&2 2>&3)
 		else
 			echo "Country descriptor (eg. 'Sweden')"
 			read certLongC
@@ -380,9 +412,9 @@ then
 
 	if [ -z "${fticks}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			whiptail --backtitle "SWAMID IDP Deployer" --title "Send anonymous data" --yesno --clear -- \
+			${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Send anonymous data" --yesno --clear -- \
 				"Do you want to send anonymous usage data to SWAMID?\nThis is recommended." ${whipSize} 3>&1 1>&2 2>&3
 			fticsNum=$?
 			fticks="n"
@@ -399,9 +431,9 @@ then
 
 	if [ -z "${eptid}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			whiptail --backtitle "SWAMID IDP Deployer" --title "EPTID" --yesno --clear -- \
+			${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "EPTID" --yesno --clear -- \
 				"Do you want to install support for EPTID?\nThis is recommended." ${whipSize} 3>&1 1>&2 2>&3
 			eptidNum=$?
 			eptid="n"
@@ -418,9 +450,9 @@ then
 
 	if [ "${eptid}" != "n" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			mysqlPass=$(whiptail --backtitle "SWAMID IDP Deployer" --title "MySQL password" --nocancel --passwordbox --clear -- \
+			mysqlPass=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "MySQL password" --nocancel --passwordbox --clear -- \
 				"Please input the root password for MySQL\n\nEmpty string generates new password." ${whipSize} 3>&1 1>&2 2>&3)
 		else
 			echo "Root password for MySQL (empty string generates new password)?"
@@ -431,9 +463,9 @@ then
 
 	if [ -z "${selfsigned}" ]
 	then
-		if [ "$sUI" = "y" ]
+		if [ "$GUIen" = "y" ]
 		then
-			whiptail --backtitle "SWAMID IDP Deployer" --title "Self signed certificate" --defaultno --yesno --clear -- \
+			${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Self signed certificate" --defaultno --yesno --clear -- \
 				"Create a self signed certificate for HTTPS?\n\nThis is NOT recommended! Only for testing purposes" ${whipSize} 3>&1 1>&2 2>&3
 			selfsignedNum=$?
 			selfsigned="n"
@@ -448,11 +480,11 @@ then
 		fi
 	fi
 
-	if [ "$sUI" = "y" ]
+	if [ "$GUIen" = "y" ]
 	then
-		pass=$(whiptail --backtitle "SWAMID IDP Deployer" --title "IDP keystore password" --nocancel --passwordbox --clear -- \
+		pass=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "IDP keystore password" --nocancel --passwordbox --clear -- \
 			"Please input your IDP keystore password\n\nEmpty string generates new password." ${whipSize} 3>&1 1>&2 2>&3)
-		httpspass=$(whiptail --backtitle "SWAMID IDP Deployer" --title "HTTPS Keystore password" --nocancel --passwordbox --clear -- \
+		httpspass=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "HTTPS Keystore password" --nocancel --passwordbox --clear -- \
 			"Please input your Keystore password for HTTPS\n\nEmpty string generates new password." ${whipSize} 3>&1 1>&2 2>&3)
 	else
 		echo "IDP keystore password (empty string generates new password)"
@@ -498,9 +530,9 @@ Create self seigned cert:  ${selfsigned}
 EOM
 
 	cRet="1"
-	if [ "$sUI" = "y" ]
+	if [ "$GUIen" = "y" ]
 	then
-		whiptail --backtitle "SWAMID IDP Deployer" --title "Save config" --clear --yesno --defaultno -- "Do you want to save theese config values?\n\nIf you save theese values the current config file will be ovverwritten.\n NOTE: No passwords will be saved." ${whipSize} 3>&1 1>&2 2>&3
+		${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Save config" --clear --yesno -- "Do you want to save theese config values?\n\nIf you save theese values the current config file will be ovverwritten.\n NOTE: No passwords will be saved." ${whipSize} 3>&1 1>&2 2>&3
 		cRet=$?
 	else
 		cat ${Spath}/files/confirm.tx
@@ -516,32 +548,34 @@ EOM
 	fi
 	if [ "${cRet}" -eq 0 ]
 	then
-		echo "appserv=\"${appserv}\""		> ${Spath}/config
-		echo "type=\"${type}\""			>> ${Spath}/config
-		echo "google=\"${google}\""		>> ${Spath}/config
-		echo "googleDom=\"${googleDom}\""	>> ${Spath}/config
-		echo "ntpserver=\"${ntpserver}\""	>> ${Spath}/config
-		echo "ldapserver=\"${ldapserver}\""	>> ${Spath}/config
-		echo "ldapbasedn=\"${ldapbasedn}\""	>> ${Spath}/config
-		echo "ldapbinddn=\"${ldapbinddn}\""	>> ${Spath}/config
-		echo "subsearch=\"${subsearch}\""	>> ${Spath}/config
-		echo "idpurl=\"${idpurl}\""		>> ${Spath}/config
-		echo "caslogurl=\"${caslogurl}\""	>> ${Spath}/config
-		echo "casurl=\"${casurl}\""		>> ${Spath}/config
-		echo "certOrg=\"${certOrg}\""		>> ${Spath}/config
-		echo "certC=\"${certC}\""		>> ${Spath}/config
-		echo "fticks=\"${fticks}\""		>> ${Spath}/config
-		echo "eptid=\"${eptid}\""		>> ${Spath}/config
-		echo "selfsigned=\"${selfsigned}\""	>> ${Spath}/config
-		echo "ninc=\"${ninc}\""			>> ${Spath}/config
-		echo "certAcro=\"${certAcro}\""		>> ${Spath}/config
-		echo "certLongC=\"${certLongC}\""	>> ${Spath}/config
+		cat > ${Spath}/config << EOM
+appserv="${appserv}"
+type="${type}"
+google="${google}"
+googleDom="${googleDom}"
+ntpserver="${ntpserver}"
+ldapserver="${ldapserver}"
+ldapbasedn="${ldapbasedn}"
+ldapbinddn="${ldapbinddn}"
+subsearch="${subsearch}"
+idpurl="${idpurl}"
+caslogurl="${caslogurl}"
+casurl="${casurl}"
+certOrg="${certOrg}"
+certC="${certC}"
+fticks="${fticks}"
+eptid="${eptid}"
+selfsigned="${selfsigned}"
+ninc="${ninc}"
+certAcro="${certAcro}"
+certLongC="${certLongC}"
+EOM
 	fi
 	cRet="1"
-	if [ "$sUI" = "y" ]
+	if [ "$GUIen" = "y" ]
 	then
-		whiptail --backtitle "SWAMID IDP Deployer" --title "Confirm" --scrolltext --clear --textbox ${Spath}/files/confirm.tx 20 75 3>&1 1>&2 2>&3
-		whiptail --backtitle "SWAMID IDP Deployer" --title "Confirm" --clear --yesno --defaultno -- "Do you want to install this IDP with theese options?" ${whipSize} 3>&1 1>&2 2>&3
+		${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Confirm" --scrolltext --clear --textbox ${Spath}/files/confirm.tx 20 75 3>&1 1>&2 2>&3
+		${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Confirm" --clear --yesno --defaultno -- "Do you want to install this IDP with theese options?" ${whipSize} 3>&1 1>&2 2>&3
 		cRet=$?
 	else
 		cat ${Spath}/files/confirm.tx
@@ -561,14 +595,13 @@ EOM
 fi
 
 
-
 /bin/echo -e "\n\n\n"
 echo "Starting deployment!"
 if [ "${upgrade}" -eq 1 ]
 then
 	echo "Previous installation found, performing upgrade."
 
-	apt-get -qq install unzip wget
+	apt-get -y install patch unzip wget >> ${statusFile} 2>&1
 	cd /opt
 	currentShib=`ls -l /opt/shibboleth-identityprovider |awk '{print $NF}'`
 	currentVer=`echo ${currentShib} |awk -F\- '{print $NF}'`
@@ -592,12 +625,10 @@ then
 	then
 		while [ -z "${idpurl}" ]
 		do
-			if [ "$sUI" = "y" ]
+			if [ "$GUIen" = "y" ]
 			then
-				hostname=`hostname`
-				hostname=`host -t A ${hostname} | awk '{print $1}'`
-				idpurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "IDP URL" --nocancel --inputbox --clear -- \
-					"Please input the URL to this IDP (https://idp.xxx.yy)." ${whipSize} "https://${hostname}" 3>&1 1>&2 2>&3)
+				idpurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "IDP URL" --nocancel --inputbox --clear -- \
+				"Please input the URL to this IDP (https://idp.xxx.yy)." ${whipSize} "https://${FQDN}" 3>&1 1>&2 2>&3)
 			else
 				echo "Specify IDP URL: (https://idp.xxx.yy)"
 				read idpurl
@@ -607,9 +638,9 @@ then
 
 		while [ -z "${casurl}" ]
 		do
-			if [ "$sUI" = "y" ]
+			if [ "$GUIen" = "y" ]
 			then
-				casurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
+				casurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
 					"Please input the URL to yourCAS server (https://cas.xxx.yy/cas)." ${whipSize} "https://cas.${Dname}/cas" 3>&1 1>&2 2>&3)
 			else
 				echo "Specify CAS URL server: (https://cas.xxx.yy/cas)"
@@ -620,9 +651,9 @@ then
 
 		while [ -z "${caslogurl}" ]
 		do
-			if [ "$sUI" = "y" ]
+			if [ "$GUIen" = "y" ]
 			then
-				caslogurl=$(whiptail --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
+				caslogurl=$(${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "" --nocancel --inputbox --clear -- \
 					"Please input the Login URL to your CAS server (https://cas.xxx.yy/cas/login)." ${whipSize} "${casurl}/login" 3>&1 1>&2 2>&3)
 			else
 				echo "Specify CAS Login URL server: (https://cas.xxx.yy/cas/login)"
@@ -637,6 +668,7 @@ then
 		cp /opt/cas-client-3.2.1/modules/cas-client-core-3.2.1.jar /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/lib
 		cp /opt/cas-client-3.2.1/modules/commons-logging-1.1.jar /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/lib
 
+		prep="prep/${type}"
 		cat ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff.template \
 			| perl -npe "s#IdPuRl#${idpurl}#" \
 			| perl -npe "s#CaSuRl#${caslogurl}#" \
@@ -644,14 +676,19 @@ then
 			> ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff
 		files="`echo ${files}` ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff"
 
-		patch /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/web.xml -i ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff
+		patch /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/web.xml -i ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff >> ${statusFile} 2>&1
 	fi
 
 	if [ -d "/opt/ndn-shib-fticks" ]
 	then
+		if [ -z "`ls /opt/ndn-shib-fticks/target/*.jar`" ]
+		then
+			cd /opt/ndn-shib-fticks
+			mvn >> ${statusFile} 2>&1
+		fi
 		cp /opt/ndn-shib-fticks/target/*.jar /opt/shibboleth-identityprovider/lib
 	else
-		whiptail --backtitle "SWAMID IDP Deployer" --title "Send anonymous data" --yesno --clear -- \
+		${whiptailBin} --backtitle "SWAMID IDP Deployer" --title "Send anonymous data" --yesno --clear -- \
 			"Do you want to send anonymous usage data to SWAMID?\nThis is recommended." ${whipSize} 3>&1 1>&2 2>&3
 		fticsNum=$?
 		fticks="n"
@@ -663,11 +700,11 @@ then
 		if [ "${fticks}" != "n" ]
 		then
 			echo "Installing ndn-shib-fticks"
-			apt-get install git maven2
+			apt-get -y install git-core maven2 openjdk-6-jdk >> ${statusFile} 2>&1
 			cd /opt
-			git clone git://github.com/leifj/ndn-shib-fticks.git
+			git clone git://github.com/leifj/ndn-shib-fticks.git >> ${statusFile} 2>&1
 			cd ndn-shib-fticks
-			mvn
+			mvn >> ${statusFile} 2>&1
 			cp /opt/ndn-shib-fticks/target/*.jar /opt/shibboleth-identityprovider/lib
 		fi
 	fi
@@ -680,33 +717,50 @@ then
 	cd /opt
 	tar zcf ${bupFile} shibboleth-idp
 
+	cp /opt/shibboleth-idp/metadata/idp-metadata.xml /opt/shibboleth-identityprovider/src/main/webapp/metadata.xml
+
+	setJavaHome
 	cd /opt/shibboleth-identityprovider
-	/bin/echo -e "\n\n\n\n"
-	sh install.sh -Dinstall.config=no -Didp.home.input="/opt/shibboleth-idp"
+	/bin/echo -e "\n\n\n\nRunning shiboleth installer"
+	sh install.sh -Dinstall.config=no -Didp.home.input="/opt/shibboleth-idp" >> ${statusFile} 2>&1
 
 else
 
 	# install depends
 	echo "Updating apt and installing generic dependancies"
 	apt-get -qq update
-	apt-get -qq install unzip default-jre apg wget
+	apt-get -y install patch unzip wget >> ${statusFile} 2>&1
+
+	# install java if needed
+	javaBin=`which java`
+	if [ ! -s "${javaBin}" ]
+	then
+		apt-get -y install default-jre >> ${statusFile} 2>&1
+		javaBin=`which java`
+	fi
+	setJavaHome
+	if [ -f "/etc/ssl/certs/java/cacerts" ]
+	then
+		javaCAcerts="/etc/ssl/certs/java/cacerts"
+	else
+		javaCAcerts="${JAVA_HOME}/lib/security/cacerts"
+	fi
+
 
 	# generate keystore pass
 	if [ -z "${pass}" ]
 	then
-		pass=`${apgCmd}`
+		pass=`${passGenCmd}`
 	fi
 	if [ -z "${httpspass}" ]
 	then
-		httpspass=`${apgCmd}`
+		httpspass=`${passGenCmd}`
 	fi
-	if [ "${eptid}" != "n" -a -z "${mysqlPass}" ]
+	if [ -z "${mysqlPass}" ]
 	then
-		mysqlPass=`${apgCmd}`
+		mysqlPass=`${passGenCmd}`
 		/bin/echo -e "Mysql root password generated\nPassword is '${mysqlPass}'" >> ${messages}
 	fi
-
-	idpfqdn=`echo ${idpurl} | awk -F\/ '{print $3}'`
 
 	cd /opt
 	# get depens if needed
@@ -728,7 +782,7 @@ else
 		isInstalled=$?
 		if [ "${isInstalled}" -ne 0 ]
 		then
-			apt-get -qq install tomcat6
+			apt-get -y install tomcat6 >> ${statusFile} 2>&1
 		fi
 	fi
 
@@ -771,41 +825,42 @@ else
 			> ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff
 		files="`echo ${files}` ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff"
 
-		patch /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/web.xml -i ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff
+		patch /opt/shibboleth-identityprovider/src/main/webapp/WEB-INF/web.xml -i ${Spath}/${prep}/shibboleth-identityprovider-web.xml.diff >> ${statusFile} 2>&1
 	fi
 
 	if [ "${fticks}" != "n" ]
 	then
 		echo "Installing ndn-shib-fticks"
-		apt-get install git maven2
+		apt-get -y install git-core maven2 openjdk-6-jdk >> ${statusFile} 2>&1
 		cd /opt
-		git clone git://github.com/leifj/ndn-shib-fticks.git
+		git clone git://github.com/leifj/ndn-shib-fticks.git >> ${statusFile} 2>&1
 		cd ndn-shib-fticks
-		mvn
+		mvn >> ${statusFile} 2>&1
 		cp /opt/ndn-shib-fticks/target/*.jar /opt/shibboleth-identityprovider/lib
 	fi
 
 	if [ "${eptid}" != "n" ]
 	then
+		echo "Installing EPTID support"
 		test=`dpkg -s mysql-server > /dev/null 2>&1`
 		isInstalled=$?
 		if [ "${isInstalled}" -ne 0 ]
 		then
 			export DEBIAN_FRONTEND=noninteractive
-			apt-get -qq -y install mysql-server
+			apt-get -y install mysql-server >> ${statusFile} 2>&1
 			
 			# set mysql root password
 			tfile=`mktemp`
 			if [ ! -f "$tfile" ]; then
 				return 1
 			fi
-			cat << EOF > $tfile
+			cat << EOM > $tfile
 USE mysql;
 UPDATE user SET password=PASSWORD("${mysqlPass}") WHERE user='root';
 FLUSH PRIVILEGES;
-EOF
+EOM
 
-			mysql --no-defaults -u root -h localhost <$tfile >/dev/null
+			mysql --no-defaults -u root -h localhost <$tfile
 			retval=$?
 			rm -f $tfile
 			if [ "${retval}" -ne 0 ]
@@ -818,7 +873,8 @@ EOF
 			fi
 		fi
 
-		wget -O ${Spath}/files/mysql-connector-java-5.1.18.tar.gz http://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-5.1.18.tar.gz/from/http://ftp.sunet.se/pub/unix/databases/relational/mysql/
+		wget -q -O ${Spath}/files/mysql-connector-java-5.1.18.tar.gz http://ftp.sunet.se/pub/unix/databases/relational/mysql/Downloads/Connector-J/mysql-connector-java-5.1.18.tar.gz
+		cd /opt
 		tar zxf ${Spath}/files/mysql-connector-java-5.1.18.tar.gz
 		cp /opt/mysql-connector-java-5.1.18/mysql-connector-java-5.1.18-bin.jar /opt/shibboleth-identityprovider/lib/
 
@@ -826,8 +882,8 @@ EOF
 
 	# run shibboleth installer
 	cd /opt/shibboleth-identityprovider
-	/bin/echo -e "\n\n\n"
-	sh install.sh -Didp.home.input="/opt/shibboleth-idp" -Didp.hostname.input="${idpfqdn}" -Didp.keystore.pass="${pass}"
+	/bin/echo -e "Running shiboleth installer"
+	sh install.sh -Didp.home.input="/opt/shibboleth-idp" -Didp.hostname.input="${FQDN}" -Didp.keystore.pass="${pass}" >> ${statusFile} 2>&1
 
 
 	# prepare config from templates
@@ -842,7 +898,7 @@ EOF
 	ldapServerStr=""
 	for i in `echo ${ldapserver}`
 	do
-		ldapServerStr="`echo ${ldapServerStr}` ldap://${i}"
+		ldapServerStr="`echo ${ldapServerStr}` ldaps://${i}"
 	done
 	ldapServerStr=`echo ${ldapServerStr} | perl -npe 's/^\s+//'`
 	cat ${Spath}/xml/attribute-resolver.xml.diff.template \
@@ -885,22 +941,65 @@ EOF
 	ccnt=1
 	while [ ${ccnt} -lt ${cnt} ]
 	do
-		subject=`openssl x509 -noout -in ${certpath}${ccnt}.root -subject | awk -F/ '{print $NF}' |cut -d= -f2`
-		test=`keytool -list -keystore ${javaCAcerts} -storepass changeit -alias "${subject}"`
-		res=$?
-		if [ "${res}" -ne 0 ]
+		md5finger=`keytool -printcert -file ${certpath}${ccnt}.root | grep MD5 | cut -d: -f2- | perl -npe 's/\s+//g'`
+		test=`keytool -list -keystore ${javaCAcerts} -storepass changeit | grep ${md5finger}`
+		if [ -z "${test}" ]
 		then
-			keytool -import -trustcacerts -alias "${subject}" -file ${certpath}${ccnt}.root -keystore ${javaCAcerts} -storepass changeit 2>/dev/null
+			keytool -import -noprompt -trustcacerts -alias "${subject}" -file ${certpath}${ccnt}.root -keystore ${javaCAcerts} -storepass changeit 2>/dev/null
 		fi
 		files="`echo ${files}` ${certpath}${ccnt}.root"
 		ccnt=`expr ${ccnt} + 1`
+	done
+
+	# Fetch certificates from LDAP servers
+	lcnt=1
+	capture=0
+	ldapCert="ldapcert.pem"
+	echo "Fetching and installing certificates from LDAP server(s)"
+	for i in `echo ${ldapserver}`
+	do
+		#Get certificate info
+		echo "QUIT" |openssl s_client -showcerts -connect ${i}:636 > ${certpath}${i}.raw 2>&1
+		files="`echo ${files}` ${certpath}${i}.raw"
+
+		for j in `cat ${certpath}${i}.raw | perl -npe 's/\ /\*\*\*/g'`
+		do
+			n=`echo ${j} | perl -npe 's/\*\*\*/\ /g'`
+			if [ ! -z "`echo ${n} | grep 'BEGIN CERTIFICATE'`" ]
+			then
+				capture=1
+				if [ -s "${certpath}${ldapCert}.${lcnt}" ]
+				then
+					lcnt=`expr ${lcnt} + 1`
+				fi
+			fi
+			if [ ${capture} = 1 ]
+			then
+				echo ${n} >> ${certpath}${ldapCert}.${lcnt}
+			fi
+			if [ ! -z "`echo ${n} | grep 'END CERTIFICATE'`" ]
+			then
+				capture=0
+			fi
+		done
+	done
+
+	for i in `ls ${certpath}${ldapCert}.*`
+	do
+		md5finger=`keytool -printcert -file ${i} | grep MD5 | cut -d: -f2- | perl -npe 's/\s+//g'`
+		test=`keytool -list -keystore ${javaCAcerts} -storepass changeit | grep ${md5finger}`
+		if [ -z "${test}" ]
+		then
+			keytool -import -noprompt -alias "${subject}" -file ${i} -keystore ${javaCAcerts} -storepass changeit 2>/dev/null
+		fi
+		files="`echo ${files}` ${i}"
 	done
 
 	if [ ! -s "${httpsP12}" ]
 	then
 		echo "Generating SSL key and certificate request"
 		openssl genrsa -out ${certpath}server.key 2048 2>/dev/null
-		openssl req -new -key ${certpath}server.key -out ${certREQ} -config ${Spath}/files/openssl.cnf -subj "/CN=${idpfqdn}/O=${certOrg}/C=${certC}"
+		openssl req -new -key ${certpath}server.key -out ${certREQ} -config ${Spath}/files/openssl.cnf -subj "/CN=${FQDN}/O=${certOrg}/C=${certC}"
 	fi
 	if [ "${selfsigned}" = "n" ]
 	then
@@ -929,7 +1028,7 @@ EOF
 				| perl -npe "s/SuBsEaRcH/${subsearch}/" \
 				> ${Spath}/${prep}/login-config.xml.diff
 			files="`echo ${files}` ${Spath}/${prep}/login-config.xml.diff"
-			patch /opt/jboss/server/default/conf/login-config.xml -i ${Spath}/${prep}/login-config.xml.diff
+			patch /opt/jboss/server/default/conf/login-config.xml -i ${Spath}/${prep}/login-config.xml.diff >> ${statusFile} 2>&1
 		fi
 
 		ln -s /opt/shibboleth-idp/war/idp.war /opt/jboss/server/default/deploy/
@@ -949,7 +1048,7 @@ EOF
 			ldapServerStr=""
 			for i in `echo ${ldapserver}`
 			do
-				ldapServerStr="`echo ${ldapServerStr}` ldap://${i}:389"
+				ldapServerStr="`echo ${ldapServerStr}` ldap://${i}"
 			done
 			ldapServerStr="`echo ${ldapServerStr} | perl -npe 's/^\s+//'`"
 
@@ -959,7 +1058,7 @@ EOF
 				| perl -npe "s/SuBsEaRcH/${subsearch}/" \
 				> ${Spath}/${prep}/login.conf.diff
 			files="`echo ${files}` ${Spath}/${prep}/login.conf.diff"
-			patch /opt/shibboleth-idp/conf/login.config -i ${Spath}/${prep}/login.conf.diff
+			patch /opt/shibboleth-idp/conf/login.config -i ${Spath}/${prep}/login.conf.diff >> ${statusFile} 2>&1
 		fi
 
 		cp ${Spath}/xml/tomcat.idp.xml /var/lib/tomcat6/conf/Catalina/localhost/idp.xml
@@ -1014,12 +1113,12 @@ EOF
 		cp /usr/share/tomcat6/lib/servlet-api.jar /opt/shibboleth-idp/lib/
 	fi
 
-	wget -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
+	wget -q -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
 	cFinger=`openssl x509 -noout -fingerprint -sha1 -in ${idpPath}/credentials/md-signer.crt | cut -d\= -f2`
 	cCnt=1
 	while [ "${cFinger}" != "${mdSignerFinger}" -a "${cCnt}" -le 10 ]
 	do
-		wget -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
+		wget -q -O ${idpPath}/credentials/md-signer.crt http://md.swamid.se/md/md-signer.crt
 		cFinger=`openssl x509 -noout -fingerprint -sha1 -in ${idpPath}/credentials/md-signer.crt | cut -d\= -f2`
 		cCnt=`expr ${cCnt} + 1`
 	done
@@ -1030,23 +1129,23 @@ EOF
 
 	# patch shibboleth config files
 	echo "Patching config files"
-	patch /opt/shibboleth-idp/conf/handler.xml -i ${Spath}/${prep}/handler.xml.diff
-	patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/relying-party.xml.diff
-	patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/attribute-filter.xml.diff
-	patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/attribute-resolver.xml.diff
+	patch /opt/shibboleth-idp/conf/handler.xml -i ${Spath}/${prep}/handler.xml.diff >> ${statusFile} 2>&1
+	patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/relying-party.xml.diff >> ${statusFile} 2>&1
+	patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/attribute-filter.xml.diff >> ${statusFile} 2>&1
+	patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/attribute-resolver.xml.diff >> ${statusFile} 2>&1
 
 	if [ "${google}" != "n" ]
 	then
-		patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/google-filter.diff
-		cat ${Spath}/xml/google-relay.diff.template | perl -npe "s/IdPfQdN/${idpfqdn}/" > ${Spath}/xml/google-relay.diff
+		patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/google-filter.diff >> ${statusFile} 2>&1
+		cat ${Spath}/xml/google-relay.diff.template | perl -npe "s/IdPfQdN/${FQDN}/" > ${Spath}/xml/google-relay.diff
 		files="`echo ${files}` ${Spath}/xml/google-relay.diff"
-		patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/google-relay.diff
+		patch /opt/shibboleth-idp/conf/relying-party.xml -i ${Spath}/xml/google-relay.diff >> ${statusFile} 2>&1
 		cat ${Spath}/xml/google.xml | perl -npe "s/GoOgLeDoMaIn/${googleDom}/" > /opt/shibboleth-idp/metadata/google.xml
 	fi
 
 	if [ "${fticks}" != "n" ]
 	then
-		patch /opt/shibboleth-idp/conf/logging.xml -i ${Spath}/xml/fticks.diff
+		patch /opt/shibboleth-idp/conf/logging.xml -i ${Spath}/xml/fticks.diff >> ${statusFile} 2>&1
 		touch /opt/shibboleth-idp/conf/fticks-key.txt
 		if [ "${appserv}" = "tomcat" ]
 		then
@@ -1056,23 +1155,33 @@ EOF
 
 	if [ "${eptid}" != "n" ]
 	then
-		epass=`${apgCmd}`
+		epass=`${passGenCmd}`
+		# grant sql access for shibboleth
 		esalt=`openssl rand -base64 36 2>/dev/null`
 		cat ${Spath}/xml/eptid.sql.template | perl -npe "s#SqLpAsSwOrD#${epass}#" > ${Spath}/xml/eptid.sql
 		files="`echo ${files}` ${Spath}/xml/eptid.sql"
 
 		echo "Create MySQL database and shibboleth user."
 		mysql -uroot -p"${mysqlPass}" < ${Spath}/xml/eptid.sql
-
+		retval=$?
+		if [ "${retval}" -ne 0 ]
+		then
+			/bin/echo -e "Failed to create EPTID database, take a look in the file '${Spath}/xml/eptid.sql.template' and corect the issue." >> ${messages}
+			/bin/echo -e "Password for the database user can be found in: /opt/shibboleth-idp/conf/attribute-resolver.xml" >> ${messages}
+		fi
+			
 		cat ${Spath}/xml/eptid-AR.diff.template \
 			| perl -npe "s#SqLpAsSwOrD#${epass}#" \
 			| perl -npe "s#Large_Random_Salt_Value#${esalt}#" \
 			> ${Spath}/xml/eptid-AR.diff
 		files="`echo ${files}` ${Spath}/xml/eptid-AR.diff"
 
-		patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/eptid-AR.diff
-		patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/eptid-AF.diff
+		patch /opt/shibboleth-idp/conf/attribute-resolver.xml -i ${Spath}/xml/eptid-AR.diff >> ${statusFile} 2>&1
+		patch /opt/shibboleth-idp/conf/attribute-filter.xml -i ${Spath}/xml/eptid-AF.diff >> ${statusFile} 2>&1
 	fi
+
+	echo "Updating time from: ${ntpserver}"
+	/usr/sbin/ntpdate ${ntpserver} > /dev/null 2>&1
 
 	# add crontab entry for ntpdate
 	test=`crontab -l 2>/dev/null |grep "${ntpserver}" |grep ntpdate`
@@ -1086,6 +1195,11 @@ EOF
 		fi
 		/bin/echo -e "${CRONTAB}*/5 *  *   *   *     /usr/sbin/ntpdate ${ntpserver} > /dev/null 2>&1" | crontab
 	fi
+fi
+
+if [ "${appserv}" = "tomcat" ]
+then
+	service tomcat6 restart
 fi
 
 if [ "${cleanUp}" -eq 1 ]
