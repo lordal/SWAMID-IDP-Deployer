@@ -1,0 +1,20 @@
+<!-- Google -->
+<afp:AttributeFilterPolicy id="google">
+	<afp:PolicyRequirementRule xsi:type="basic:AttributeRequesterString" value="google.com" />
+
+	<afp:AttributeRule attributeID="NameID">
+		<afp:PermitValueRule xsi:type="basic:ANY" />
+	</afp:AttributeRule>
+ 
+	<afp:AttributeRule attributeID="principal">
+		<afp:PermitValueRule xsi:type="basic:ANY" />
+	</afp:AttributeRule>
+ 
+	<afp:AttributeRule attributeID="commonName">
+		<afp:PermitValueRule xsi:type="basic:ANY" />
+	</afp:AttributeRule>
+ 
+</afp:AttributeFilterPolicy>
+
+
+<!-- PLACEHOLDER DO NOT REMOVE -->

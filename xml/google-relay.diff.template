@@ -1,4 +1,4 @@
-63a64,73
+70a71,79
 > <rp:RelyingParty id="google.com"
 > 		provider="https://IdPfQdN/idp/shibboleth"
 > 		defaultSigningCredentialRef="IdPCredential">
@@ -8,12 +8,8 @@
 > 			encryptNameIds="never" />
 > </rp:RelyingParty>
 > 
-> 
-74a85,91
-> 
+77a87,90
 > <metadata:MetadataProvider id="GoogleMD" xsi:type="FilesystemMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
 > 		requireValidMetadata="false"
 > 		metadataFile="/opt/shibboleth-idp/metadata/google.xml" />
-> 
-> 
 > 

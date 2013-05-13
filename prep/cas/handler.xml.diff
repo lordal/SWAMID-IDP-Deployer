@@ -1,7 +1,8 @@
-81a82
+114a115
 > <!--
-84a86,95
+117a119,130
 > -->
+> 
 > <!-- Remote User handler for CAS support -->
 > <ph:LoginHandler xsi:type="ph:RemoteUser">
 >   <ph:AuthenticationMethod>
@@ -11,3 +12,4 @@
 >     urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport
 >   </ph:AuthenticationMethod>
 > </ph:LoginHandler>
+> 

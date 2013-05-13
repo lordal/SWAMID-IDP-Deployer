@@ -1,4 +1,4 @@
-74a84,136
+82a83,136
 > 
 > 
 > 	<metadata:MetadataProvider id="URLMD" xsi:type="FileBackedHTTPMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
@@ -15,7 +15,7 @@
 > 			</metadata:MetadataFilter -->
 > 		</metadata:MetadataFilter>
 > 	</metadata:MetadataProvider>
-> 
+>  
 > 	<metadata:MetadataProvider id="URLMD2" xsi:type="FileBackedHTTPMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
 > 			metadataURL="http://md.swamid.se/md/swamid-1.0.xml"
 > 			backingFile="/opt/shibboleth-idp/metadata/swamid-1.0.xml">
@@ -25,7 +25,7 @@
 > 				requireSignedMetadata="true" />
 > 		</metadata:MetadataFilter>
 > 	</metadata:MetadataProvider>
-> 
+>  
 > 	<metadata:MetadataProvider id="URLMD3" xsi:type="FileBackedHTTPMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
 > 			metadataURL="http://md.swamid.se/md/swamid-testing-1.0.xml"
 > 			backingFile="/opt/shibboleth-idp/metadata/swamid-testing-1.0.xml">
@@ -35,9 +35,9 @@
 > 				requireSignedMetadata="true" />
 > 		</metadata:MetadataFilter>
 > 	</metadata:MetadataProvider>
-> 
+>  
 > 	<metadata:MetadataProvider id="URLMD4" xsi:type="FileBackedHTTPMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
-> 			metadataURL="http://wayf.swamid.se/md/nya-1.0-testing.xml"
+> 			metadataURL="http://md.swamid.se/md/nya-1.0-testing.xml"
 > 			backingFile="/opt/shibboleth-idp/metadata/nya-1.0-testing.xml">
 > 		<metadata:MetadataFilter xsi:type="ChainingFilter" xmlns="urn:mace:shibboleth:2.0:metadata">
 > 		<metadata:MetadataFilter xsi:type="SignatureValidation" xmlns="urn:mace:shibboleth:2.0:metadata"
@@ -45,18 +45,20 @@
 > 				requireSignedMetadata="true" />
 > 		</metadata:MetadataFilter>
 > 	</metadata:MetadataProvider>
-> 
-> 
+>  
+>  
 > 	<metadata:MetadataProvider id="URLMD5" xsi:type="FileBackedHTTPMetadataProvider" xmlns="urn:mace:shibboleth:2.0:metadata"
 > 			metadataURL="http://testshib.org/metadata/testshib-providers.xml"
 > 			backingFile="/opt/shibboleth-idp/metadata/testshib-providers.xml">
 > 	</metadata:MetadataProvider>
 > 
-115a159,165
->         <security:TrustEngine id="swamid-metadata-signer" xsi:type="security:StaticExplicitKeySignature">
->                 <security:Credential id="MyFederation1Credentials" xsi:type="security:X509Filesystem">
->                         <security:Certificate>/opt/shibboleth-idp/credentials/md-signer.crt</security:Certificate>
->                 </security:Credential>
->         </security:TrustEngine>
+> 
+114a169,176
+> 	<security:TrustEngine id="swamid-metadata-signer" xsi:type="security:StaticExplicitKeySignature">
+> 		<security:Credential id="MyFederation1Credentials" xsi:type="security:X509Filesystem">
+> 			<security:Certificate>/opt/shibboleth-idp/credentials/md-signer.crt</security:Certificate>
+> 		</security:Credential>
+> 	</security:TrustEngine>
+> 
 > 
 > 

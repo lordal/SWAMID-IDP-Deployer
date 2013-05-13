@@ -1,4 +1,4 @@
-25a26,34
+25a26,35
 >     <afp:AttributeFilterPolicy id="releasePermanentIdToAnyone">
 >        <afp:PolicyRequirementRule xsi:type="basic:ANY" />
 >        <afp:AttributeRule attributeID="persistentId">
@@ -8,3 +8,4 @@
 >           <afp:PermitValueRule xsi:type="basic:ANY" />
 >        </afp:AttributeRule>
 >     </afp:AttributeFilterPolicy>
+> 

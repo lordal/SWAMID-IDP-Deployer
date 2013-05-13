@@ -1,6 +1,15 @@
 Changelog
 
-1.5	Changed shibboleth version from 2.4.5 to 2.4.6
+2.0	Changed shibboleth version from 2.3.8 to 2.4.0
+	Added entity-categories to default filter config
+	Changed mysql-connector-java version from 5.1.18 to 5.1.24
+	Fixed the link for tomcat6-dta-ssl
+	Change web fetcher from wget to curl
+
+1.6	Added support for CentOS / Redhat EL
+	Changed shibboleth version from 2.3.6 to 2.3.8
+
+1.5	Changed shibboleth version from 2.3.5 to 2.3.6
 	Code cleanup
 	Fixed problems with fticks install
 	Added support for other java versions than default-jre (add java binary to path)
@@ -17,7 +26,7 @@ Changelog
 
 1.2	Added support for stored pseudonym identifiers (EPTID)
 
-1.1	Changed shibboleth version from 2.4.4 to 2.4.5
+1.1	Changed shibboleth version from 2.3.4 to 2.3.5
 	Added support for anonymous usage reporting to SWAMID
 	Added support for tomcat6 application server
 	Removed apache HTTPD dependancy
