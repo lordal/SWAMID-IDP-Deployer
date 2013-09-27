@@ -28,6 +28,24 @@ HELP="
 # Please send questions and improvements to: anders.lordal@hig.se            #
 ##############################################################################
 "
+
+# Copyright 2011, 2012, 2013 Anders Lördal, Högskolan i Gävle and SWAMID
+#
+# This file is part of IDP-Deployer
+#
+# IDP-Deployer is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# IDP-Deployer is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with IDP-Deployer.  If not, see <http://www.gnu.org/licenses/>.
+
 mdSignerFinger="12:60:D7:09:6A:D9:C1:43:AD:31:88:14:3C:A8:C4:B7:33:8A:4F:CB"
 
 # Set cleanUp to 0 (zero) for debugging of created files
